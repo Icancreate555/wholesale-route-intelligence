@@ -1,0 +1,5 @@
+streamlit==1.63.0
+streamlit-js-eval==1.0.0
+streamlit-autorefresh==1.0.1
+pandas
+pydeck
