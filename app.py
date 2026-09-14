@@ -1,4 +1,4 @@
-```python
+
 import math
 import sqlite3
 import uuid
