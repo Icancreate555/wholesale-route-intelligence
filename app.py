@@ -1357,8 +1357,6 @@ else:
         Sales, customers, returns, collections, margins and
         cost-to-serve will be connected to these routes later.
         """
-    )
-```
     page_title=APP_TITLE,
     page_icon="🗺️",
     layout="wide",
