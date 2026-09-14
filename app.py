@@ -1,4 +1,3 @@
-
 import math
 import sqlite3
 import uuid
@@ -10,22 +9,19 @@ import streamlit as st
 
 
 # ============================================================
-# APP CONFIGURATION
+# CONFIG
 # ============================================================
 
-APP_TITLE = "Wholesale Route Intelligence"
 DB_FILE = "route_intelligence.db"
-
-# Ignore tiny GPS movements.
-MIN_POINT_DISTANCE_METERS = 10
+MIN_DISTANCE_METERS = 10
 
 
 # ============================================================
-# PAGE CONFIG
+# PAGE
 # ============================================================
 
 st.set_page_config(
-    page_title=APP_TITLE,
+    page_title="Wholesale Route Intelligence",
     page_icon="🗺️",
     layout="wide",
 )
@@ -35,21 +31,16 @@ st.set_page_config(
 # DATABASE
 # ============================================================
 
-def get_connection():
-    connection = sqlite3.connect(
-        DB_FILE,
-        check_same_thread=False,
-    )
-    connection.row_factory = sqlite3.Row
-    return connection
+def db():
+    con = sqlite3.connect(DB_FILE, check_same_thread=False)
+    con.row_factory = sqlite3.Row
+    return con
 
 
-def init_database():
-    connection = get_connection()
-    cursor = connection.cursor()
+def init_db():
+    con = db()
 
-    cursor.execute(
-        """
+    con.execute("""
         CREATE TABLE IF NOT EXISTS routes (
             route_id TEXT PRIMARY KEY,
             salesperson TEXT NOT NULL,
@@ -57,97 +48,77 @@ def init_database():
             ended_at TEXT,
             status TEXT NOT NULL
         )
-        """
-    )
+    """)
 
-    cursor.execute(
-        """
+    con.execute("""
         CREATE TABLE IF NOT EXISTS route_points (
             point_id INTEGER PRIMARY KEY AUTOINCREMENT,
             route_id TEXT NOT NULL,
             recorded_at TEXT NOT NULL,
             latitude REAL NOT NULL,
             longitude REAL NOT NULL,
-            accuracy REAL,
-            FOREIGN KEY(route_id) REFERENCES routes(route_id)
+            accuracy REAL
         )
-        """
-    )
+    """)
 
-    connection.commit()
-    connection.close()
+    con.commit()
+    con.close()
 
 
-init_database()
+init_db()
 
 
 # ============================================================
-# ROUTE DATABASE FUNCTIONS
+# ROUTES
 # ============================================================
 
-def create_route(salesperson):
+def start_route(name):
     route_id = str(uuid.uuid4())
 
-    started_at = datetime.now(
-        timezone.utc
-    ).isoformat()
-
-    connection = get_connection()
-
-    connection.execute(
+    con = db()
+    con.execute(
         """
-        INSERT INTO routes (
-            route_id,
-            salesperson,
-            started_at,
-            ended_at,
-            status
-        )
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO routes
+        (route_id, salesperson, started_at, status)
+        VALUES (?, ?, ?, ?)
         """,
         (
             route_id,
-            salesperson,
-            started_at,
-            None,
+            name,
+            datetime.now(timezone.utc).isoformat(),
             "active",
         ),
     )
-
-    connection.commit()
-    connection.close()
+    con.commit()
+    con.close()
 
     return route_id
 
 
-def end_route(route_id):
-    ended_at = datetime.now(
-        timezone.utc
-    ).isoformat()
+def finish_route(route_id):
+    con = db()
 
-    connection = get_connection()
-
-    connection.execute(
+    con.execute(
         """
         UPDATE routes
-        SET ended_at = ?,
-            status = 'completed'
+        SET status = 'completed',
+            ended_at = ?
         WHERE route_id = ?
         """,
         (
-            ended_at,
+            datetime.now(timezone.utc).isoformat(),
             route_id,
         ),
     )
 
-    connection.commit()
-    connection.close()
+    con.commit()
+    con.close()
 
 
-def get_active_route(salesperson):
-    connection = get_connection()
+def active_route(name):
+    con = db()
 
-    row = connection.execute(
+    row = con.execute(
         """
         SELECT *
         FROM routes
@@ -156,18 +127,17 @@ def get_active_route(salesperson):
         ORDER BY started_at DESC
         LIMIT 1
         """,
-        (salesperson,),
+        (name,),
     ).fetchone()
 
-    connection.close()
-
+    con.close()
     return row
 
 
-def get_active_routes():
-    connection = get_connection()
+def all_active_routes():
+    con = db()
 
-    rows = connection.execute(
+    rows = con.execute(
         """
         SELECT *
         FROM routes
@@ -176,15 +146,14 @@ def get_active_routes():
         """
     ).fetchall()
 
-    connection.close()
-
+    con.close()
     return rows
 
 
-def get_completed_routes():
-    connection = get_connection()
+def completed_routes():
+    con = db()
 
-    rows = connection.execute(
+    rows = con.execute(
         """
         SELECT *
         FROM routes
@@ -193,70 +162,35 @@ def get_completed_routes():
         """
     ).fetchall()
 
-    connection.close()
-
+    con.close()
     return rows
 
 
 # ============================================================
-# GPS DATABASE FUNCTIONS
+# GPS
 # ============================================================
 
-def add_route_point(
-    route_id,
-    latitude,
-    longitude,
-    accuracy,
-    recorded_at,
-):
-    connection = get_connection()
+def route_points(route_id):
+    con = db()
 
-    connection.execute(
-        """
-        INSERT INTO route_points (
-            route_id,
-            recorded_at,
-            latitude,
-            longitude,
-            accuracy
-        )
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        (
-            route_id,
-            recorded_at,
-            latitude,
-            longitude,
-            accuracy,
-        ),
-    )
-
-    connection.commit()
-    connection.close()
-
-
-def get_route_points(route_id):
-    connection = get_connection()
-
-    rows = connection.execute(
+    rows = con.execute(
         """
         SELECT *
         FROM route_points
         WHERE route_id = ?
-        ORDER BY recorded_at ASC
+        ORDER BY recorded_at
         """,
         (route_id,),
     ).fetchall()
 
-    connection.close()
-
+    con.close()
     return rows
 
 
-def get_last_route_point(route_id):
-    connection = get_connection()
+def last_point(route_id):
+    con = db()
 
-    row = connection.execute(
+    row = con.execute(
         """
         SELECT *
         FROM route_points
@@ -267,371 +201,240 @@ def get_last_route_point(route_id):
         (route_id,),
     ).fetchone()
 
-    connection.close()
-
+    con.close()
     return row
 
 
-# ============================================================
-# DISTANCE CALCULATION
-# ============================================================
+def save_point(route_id, lat, lon, accuracy, timestamp):
+    previous = last_point(route_id)
 
-def haversine_distance(
-    lat1,
-    lon1,
-    lat2,
-    lon2,
-):
-    earth_radius = 6_371_000
+    if previous:
+        distance = haversine(
+            previous["latitude"],
+            previous["longitude"],
+            lat,
+            lon,
+        )
 
-    lat1 = math.radians(lat1)
-    lat2 = math.radians(lat2)
+        if distance < MIN_DISTANCE_METERS:
+            return False
 
-    delta_lat = math.radians(lat2 - lat1)
-    delta_lon = math.radians(lon2 - lon1)
+    con = db()
 
-    a = (
-        math.sin(delta_lat / 2) ** 2
-        +
-        math.cos(lat1)
-        * math.cos(lat2)
-        * math.sin(delta_lon / 2) ** 2
+    con.execute(
+        """
+        INSERT INTO route_points
+        (route_id, recorded_at, latitude, longitude, accuracy)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            route_id,
+            timestamp,
+            lat,
+            lon,
+            accuracy,
+        ),
     )
 
-    c = 2 * math.atan2(
+    con.commit()
+    con.close()
+
+    return True
+
+
+def haversine(lat1, lon1, lat2, lon2):
+    radius = 6371000
+
+    p1 = math.radians(lat1)
+    p2 = math.radians(lat2)
+
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+
+    a = (
+        math.sin(dp / 2) ** 2
+        + math.cos(p1)
+        * math.cos(p2)
+        * math.sin(dl / 2) ** 2
+    )
+
+    return radius * 2 * math.atan2(
         math.sqrt(a),
         math.sqrt(1 - a),
     )
 
-    return earth_radius * c
-
 
 # ============================================================
-# CONTINUOUS BROWSER GPS COMPONENT
+# BROWSER GPS COMPONENT
 # ============================================================
 
-GPS_HTML = """
-<div id="gps-status">
-    GPS tracker ready
-</div>
-"""
+GPS_COMPONENT = st.components.v2.component(
+    "route_gps_tracker",
 
-GPS_CSS = """
-#gps-status {
-    font-size: 0.85rem;
-    color: var(--st-text-color);
-    padding: 4px 0;
-}
-"""
+    html="""
+        <div id="gps">
+            GPS: waiting
+        </div>
+    """,
 
-GPS_JS = """
-export default function(component) {
+    css="""
+        #gps {
+            font-size: 14px;
+            padding: 5px 0;
+        }
+    """,
 
-    const {
-        data,
-        setStateValue,
-        parentElement
-    } = component;
+    js="""
+        export default function(component) {
 
-    // Keep GPS watcher information attached to this
-    // component instance so it survives Streamlit reruns.
-    if (!parentElement.__routeGps) {
-        parentElement.__routeGps = {
-            watchId: null,
-            tracking: false
-        };
-    }
+            const {
+                data,
+                parentElement,
+                setStateValue
+            } = component;
 
-    const gps = parentElement.__routeGps;
+            const box =
+                parentElement.querySelector("#gps");
 
-    const statusElement =
-        parentElement.querySelector("#gps-status");
+            if (!parentElement.__gps) {
+
+                parentElement.__gps = {
+                    watchId: null,
+                    active: false
+                };
+            }
+
+            const gps = parentElement.__gps;
 
 
-    // --------------------------------------------------------
-    // START GPS WATCHING
-    // --------------------------------------------------------
+            // START WATCHING
+            if (
+                data.tracking &&
+                !gps.active
+            ) {
 
-    if (data && data.tracking && !gps.tracking) {
+                if (!navigator.geolocation) {
 
-        if (!navigator.geolocation) {
+                    box.innerText =
+                        "GPS not supported";
 
-            setStateValue(
-                "error",
-                {
-                    code: -1,
-                    message:
-                        "This browser does not support GPS location."
+                    setStateValue(
+                        "error",
+                        "Browser does not support geolocation"
+                    );
+
+                } else {
+
+                    gps.active = true;
+
+                    box.innerText =
+                        "🟢 GPS tracking active";
+
+                    gps.watchId =
+                        navigator.geolocation.watchPosition(
+
+                            function(position) {
+
+                                const c =
+                                    position.coords;
+
+                                setStateValue(
+                                    "position",
+                                    {
+                                        latitude:
+                                            c.latitude,
+
+                                        longitude:
+                                            c.longitude,
+
+                                        accuracy:
+                                            c.accuracy,
+
+                                        timestamp:
+                                            position.timestamp
+                                    }
+                                );
+
+                                box.innerText =
+                                    "🟢 GPS point received";
+                            },
+
+                            function(error) {
+
+                                box.innerText =
+                                    "🔴 GPS error";
+
+                                setStateValue(
+                                    "error",
+                                    error.message
+                                );
+                            },
+
+                            {
+                                enableHighAccuracy: true,
+                                maximumAge: 5000,
+                                timeout: 15000
+                            }
+                        );
                 }
-            );
-
-        } else {
-
-            gps.tracking = true;
-
-            if (statusElement) {
-                statusElement.innerText =
-                    "🟢 GPS tracking active";
             }
 
 
-            gps.watchId =
-                navigator.geolocation.watchPosition(
+            // STOP WATCHING
+            if (
+                !data.tracking &&
+                gps.active
+            ) {
 
-                    function(position) {
+                if (
+                    gps.watchId !== null
+                ) {
 
-                        const coords =
-                            position.coords;
+                    navigator.geolocation.clearWatch(
+                        gps.watchId
+                    );
+                }
 
-                        const gpsPoint = {
-                            latitude:
-                                coords.latitude,
+                gps.watchId = null;
+                gps.active = false;
 
-                            longitude:
-                                coords.longitude,
-
-                            accuracy:
-                                coords.accuracy,
-
-                            altitude:
-                                coords.altitude,
-
-                            heading:
-                                coords.heading,
-
-                            speed:
-                                coords.speed,
-
-                            timestamp:
-                                position.timestamp
-                        };
+                box.innerText =
+                    "GPS stopped";
+            }
 
 
-                        // Send the newest GPS position
-                        // to Streamlit/Python.
-                        setStateValue(
-                            "position",
-                            gpsPoint
-                        );
-                    },
+            // CLEANUP
+            return function() {
 
+                if (
+                    gps.watchId !== null
+                ) {
 
-                    function(error) {
+                    navigator.geolocation.clearWatch(
+                        gps.watchId
+                    );
+                }
 
-                        setStateValue(
-                            "error",
-                            {
-                                code:
-                                    error.code,
-
-                                message:
-                                    error.message
-                            }
-                        );
-                    },
-
-
-                    {
-                        enableHighAccuracy: true,
-
-                        maximumAge: 5000,
-
-                        timeout: 15000
-                    }
-                );
+                gps.watchId = null;
+                gps.active = false;
+            };
         }
-    }
-
-
-    // --------------------------------------------------------
-    // STOP GPS WATCHING
-    // --------------------------------------------------------
-
-    if (
-        data &&
-        !data.tracking &&
-        gps.tracking
-    ) {
-
-        if (gps.watchId !== null) {
-
-            navigator.geolocation.clearWatch(
-                gps.watchId
-            );
-
-            gps.watchId = null;
-        }
-
-        gps.tracking = false;
-
-        if (statusElement) {
-            statusElement.innerText =
-                "GPS tracker stopped";
-        }
-    }
-
-
-    // --------------------------------------------------------
-    // CLEAN UP WHEN COMPONENT IS REMOVED
-    // --------------------------------------------------------
-
-    return function() {
-
-        if (gps.watchId !== null) {
-
-            navigator.geolocation.clearWatch(
-                gps.watchId
-            );
-
-            gps.watchId = null;
-        }
-
-        gps.tracking = false;
-    };
-}
-"""
-
-
-gps_component = st.components.v2.component(
-    "wholesale_route_gps",
-    html=GPS_HTML,
-    css=GPS_CSS,
-    js=GPS_JS,
+    """,
 )
-
-
-# ============================================================
-# GPS PROCESSING
-# ============================================================
-
-def process_gps_position(
-    route_id,
-    position,
-):
-    if not position:
-        return False
-
-    try:
-        latitude = float(
-            position["latitude"]
-        )
-
-        longitude = float(
-            position["longitude"]
-        )
-
-        accuracy_value = position.get(
-            "accuracy"
-        )
-
-        accuracy = (
-            float(accuracy_value)
-            if accuracy_value is not None
-            else None
-        )
-
-        timestamp_ms = position.get(
-            "timestamp"
-        )
-
-        if timestamp_ms:
-            recorded_at = (
-                datetime.fromtimestamp(
-                    timestamp_ms / 1000,
-                    tz=timezone.utc,
-                ).isoformat()
-            )
-        else:
-            recorded_at = (
-                datetime.now(
-                    timezone.utc
-                ).isoformat()
-            )
-
-    except (
-        KeyError,
-        TypeError,
-        ValueError,
-        OverflowError,
-    ):
-        return False
-
-
-    # --------------------------------------------------------
-    # CHECK LAST POINT
-    # --------------------------------------------------------
-
-    last_point = get_last_route_point(
-        route_id
-    )
-
-    if last_point:
-
-        last_lat = float(
-            last_point["latitude"]
-        )
-
-        last_lon = float(
-            last_point["longitude"]
-        )
-
-        distance = haversine_distance(
-            last_lat,
-            last_lon,
-            latitude,
-            longitude,
-        )
-
-        # Ignore GPS noise / tiny movements.
-        if distance < MIN_POINT_DISTANCE_METERS:
-            return False
-
-
-        # Avoid duplicate timestamp.
-        if (
-            last_point["recorded_at"]
-            == recorded_at
-        ):
-            return False
-
-
-    # --------------------------------------------------------
-    # SAVE GPS POINT
-    # --------------------------------------------------------
-
-    add_route_point(
-        route_id=route_id,
-        latitude=latitude,
-        longitude=longitude,
-        accuracy=accuracy,
-        recorded_at=recorded_at,
-    )
-
-    return True
 
 
 # ============================================================
 # MAP
 # ============================================================
 
-def create_route_map(
-    active_routes,
-    completed_routes,
-):
+def make_map(routes):
+    paths = []
+    positions = []
+    coordinates = []
 
-    route_paths = []
-    current_positions = []
+    for route in routes:
 
-    all_coordinates = []
-
-
-    # --------------------------------------------------------
-    # ACTIVE ROUTES
-    # --------------------------------------------------------
-
-    for route in active_routes:
-
-        points = get_route_points(
+        points = route_points(
             route["route_id"]
         )
 
@@ -642,201 +445,92 @@ def create_route_map(
 
         for point in points:
 
-            coordinate = [
+            coord = [
                 float(point["longitude"]),
                 float(point["latitude"]),
             ]
 
-            path.append(
-                coordinate
-            )
+            path.append(coord)
+            coordinates.append(coord)
 
-            all_coordinates.append(
-                coordinate
-            )
-
-
-        if len(path) >= 1:
-
-            route_paths.append(
-                {
-                    "salesperson":
-                        route["salesperson"],
-
-                    "route_type":
-                        "Active",
-
-                    "path":
-                        path,
-                }
-            )
-
-
-        latest = points[-1]
-
-        current_positions.append(
+        paths.append(
             {
-                "salesperson":
-                    route["salesperson"],
-
-                "longitude":
-                    float(latest["longitude"]),
-
-                "latitude":
-                    float(latest["latitude"]),
+                "salesperson": route["salesperson"],
+                "path": path,
             }
         )
 
+        if route["status"] == "active":
 
-    # --------------------------------------------------------
-    # COMPLETED ROUTES
-    # --------------------------------------------------------
+            latest = points[-1]
 
-    for route in completed_routes:
-
-        points = get_route_points(
-            route["route_id"]
-        )
-
-        if not points:
-            continue
-
-        path = []
-
-        for point in points:
-
-            coordinate = [
-                float(point["longitude"]),
-                float(point["latitude"]),
-            ]
-
-            path.append(
-                coordinate
-            )
-
-            all_coordinates.append(
-                coordinate
-            )
-
-
-        if len(path) >= 1:
-
-            route_paths.append(
+            positions.append(
                 {
                     "salesperson":
                         route["salesperson"],
 
-                    "route_type":
-                        "Completed",
+                    "longitude":
+                        float(latest["longitude"]),
 
-                    "path":
-                        path,
+                    "latitude":
+                        float(latest["latitude"]),
                 }
             )
 
-
-    # --------------------------------------------------------
-    # NO GPS DATA
-    # --------------------------------------------------------
-
-    if not all_coordinates:
-
+    if not coordinates:
         return None
 
-
-    # --------------------------------------------------------
-    # MAP CENTER
-    # --------------------------------------------------------
-
     center_lon = sum(
-        coordinate[0]
-        for coordinate in all_coordinates
-    ) / len(all_coordinates)
+        x[0] for x in coordinates
+    ) / len(coordinates)
 
     center_lat = sum(
-        coordinate[1]
-        for coordinate in all_coordinates
-    ) / len(all_coordinates)
-
-
-    # --------------------------------------------------------
-    # LAYERS
-    # --------------------------------------------------------
+        x[1] for x in coordinates
+    ) / len(coordinates)
 
     layers = []
 
-
-    if route_paths:
-
-        route_df = pd.DataFrame(
-            route_paths
-        )
+    if paths:
 
         layers.append(
             pdk.Layer(
                 "PathLayer",
-                data=route_df,
+                data=pd.DataFrame(paths),
                 get_path="path",
                 get_width=6,
                 width_min_pixels=4,
                 pickable=True,
-                get_color=[
-                    30,
-                    120,
-                    220,
-                ],
+                get_color=[30, 120, 220],
             )
         )
 
-
-    if current_positions:
-
-        position_df = pd.DataFrame(
-            current_positions
-        )
+    if positions:
 
         layers.append(
             pdk.Layer(
                 "ScatterplotLayer",
-                data=position_df,
+                data=pd.DataFrame(positions),
                 get_position=[
                     "longitude",
                     "latitude",
                 ],
                 get_radius=80,
                 radius_min_pixels=8,
-                radius_max_pixels=16,
                 pickable=True,
-                get_fill_color=[
-                    220,
-                    50,
-                    50,
-                ],
+                get_fill_color=[220, 50, 50],
             )
         )
 
-
-    # --------------------------------------------------------
-    # VIEW
-    # --------------------------------------------------------
-
-    view_state = pdk.ViewState(
-        latitude=center_lat,
-        longitude=center_lon,
-        zoom=13,
-        pitch=0,
-    )
-
-
     return pdk.Deck(
         layers=layers,
-        initial_view_state=view_state,
+        initial_view_state=pdk.ViewState(
+            latitude=center_lat,
+            longitude=center_lon,
+            zoom=13,
+        ),
         tooltip={
             "html":
-                """
-                <b>{salesperson}</b><br/>
-                {route_type}
-                """
+                "<b>{salesperson}</b>"
         },
         map_style="light",
     )
@@ -846,21 +540,18 @@ def create_route_map(
 # HEADER
 # ============================================================
 
-st.markdown(
-    "# 🗺️ Wholesale Route Intelligence"
-)
+st.title("🗺️ Wholesale Route Intelligence")
 
 st.caption(
-    "See where the business physically moves "
-    "and which areas are being covered."
+    "V1: capture where the salesperson physically moves."
 )
 
 
 # ============================================================
-# SIDEBAR
+# MODE
 # ============================================================
 
-role = st.sidebar.radio(
+mode = st.sidebar.radio(
     "Open as",
     [
         "Salesperson",
@@ -868,174 +559,129 @@ role = st.sidebar.radio(
     ],
 )
 
-st.sidebar.markdown("---")
-
-st.sidebar.caption(
-    """
-    V1 focuses only on geography.
-
-    It records movement while a salesperson
-    has an active route.
-
-    It does not measure time spent with customers.
-    """
-)
-
 
 # ============================================================
-# SALESPERSON VIEW
+# SALESPERSON
 # ============================================================
 
-if role == "Salesperson":
+if mode == "Salesperson":
 
     st.header("Salesperson Route")
 
-    salesperson = st.text_input(
+    name = st.text_input(
         "Salesperson name",
         placeholder="e.g. Peter",
     ).strip()
 
-
-    if not salesperson:
+    if not name:
 
         st.info(
-            "Enter the salesperson name."
+            "Enter your name to begin."
         )
-
-        # Keep component mounted even before
-        # a route exists.
-        gps_result = gps_component(
-            data={
-                "tracking": False
-            },
-            default={
-                "position": None,
-                "error": None,
-            },
-            key="gps_tracker",
-            on_position_change=lambda: None,
-            on_error_change=lambda: None,
-        )
-
 
     else:
 
-        active_route = get_active_route(
-            salesperson
-        )
+        route = active_route(name)
 
-        is_tracking = (
-            active_route is not None
-        )
+        tracking = route is not None
 
-
-        # ----------------------------------------------------
-        # MOUNT CONTINUOUS GPS TRACKER
-        # ----------------------------------------------------
-
-        gps_result = gps_component(
+        gps = GPS_COMPONENT(
             data={
-                "tracking": is_tracking
+                "tracking": tracking
             },
             default={
                 "position": None,
                 "error": None,
             },
-            key="gps_tracker",
+            key="gps",
             on_position_change=lambda: None,
             on_error_change=lambda: None,
         )
 
-
         # ----------------------------------------------------
-        # SAVE NEW GPS POSITION
+        # SAVE GPS POSITION
         # ----------------------------------------------------
 
         if (
-            active_route
-            and gps_result.position
+            route
+            and gps.position
         ):
 
-            process_gps_position(
-                active_route["route_id"],
-                gps_result.position,
+            position = gps.position
+
+            timestamp = datetime.fromtimestamp(
+                position["timestamp"] / 1000,
+                tz=timezone.utc,
+            ).isoformat()
+
+            save_point(
+                route["route_id"],
+                float(position["latitude"]),
+                float(position["longitude"]),
+                float(position["accuracy"]),
+                timestamp,
             )
 
-
         # ----------------------------------------------------
-        # GPS ERROR
+        # GPS DIAGNOSTICS
         # ----------------------------------------------------
 
-        if (
-            active_route
-            and gps_result.error
+        with st.expander(
+            "GPS diagnostics",
+            expanded=True,
         ):
 
-            error_message = (
-                gps_result.error.get(
-                    "message",
-                    "Unknown GPS error"
+            if gps.position:
+
+                st.success(
+                    "GPS position received"
                 )
-            )
 
-            st.error(
-                f"GPS error: {error_message}"
-            )
+                st.write(
+                    "Latitude:",
+                    gps.position["latitude"],
+                )
 
+                st.write(
+                    "Longitude:",
+                    gps.position["longitude"],
+                )
+
+                st.write(
+                    "Accuracy:",
+                    f"{gps.position['accuracy']:.1f} m",
+                )
+
+            elif gps.error:
+
+                st.error(
+                    f"GPS error: {gps.error}"
+                )
+
+            else:
+
+                st.info(
+                    "Waiting for GPS position..."
+                )
 
         # ----------------------------------------------------
         # ACTIVE ROUTE
         # ----------------------------------------------------
 
-        if active_route:
+        if route:
+
+            points = route_points(
+                route["route_id"]
+            )
 
             st.success(
-                "🟢 Route is active — GPS movement is being recorded."
+                "🟢 Route is active"
             )
 
-            points = get_route_points(
-                active_route["route_id"]
-            )
-
-
-            col1, col2, col3 = st.columns(3)
-
-
-            col1.metric(
-                "GPS Points",
+            st.metric(
+                "GPS Points recorded",
                 len(points),
             )
-
-
-            if points:
-
-                latest = points[-1]
-
-                col2.metric(
-                    "Latitude",
-                    f"{float(latest['latitude']):.5f}",
-                )
-
-                col3.metric(
-                    "Longitude",
-                    f"{float(latest['longitude']):.5f}",
-                )
-
-            else:
-
-                col2.metric(
-                    "Latitude",
-                    "Waiting...",
-                )
-
-                col3.metric(
-                    "Longitude",
-                    "Waiting...",
-                )
-
-
-            st.write("")
-
 
             if st.button(
                 "⛔ End Route",
@@ -1043,27 +689,21 @@ if role == "Salesperson":
                 use_container_width=True,
             ):
 
-                end_route(
-                    active_route["route_id"]
+                finish_route(
+                    route["route_id"]
                 )
 
                 st.success(
-                    "Route ended successfully."
+                    "Route ended."
                 )
 
                 st.rerun()
 
-
         # ----------------------------------------------------
-        # NO ACTIVE ROUTE
+        # START ROUTE
         # ----------------------------------------------------
 
         else:
-
-            st.info(
-                "No route is currently active."
-            )
-
 
             if st.button(
                 "▶️ Start Route",
@@ -1071,29 +711,19 @@ if role == "Salesperson":
                 use_container_width=True,
             ):
 
-                route_id = create_route(
-                    salesperson
-                )
+                start_route(name)
 
                 st.success(
-                    "Route started. Allow location access if your browser asks."
+                    "Route started. Allow location access."
                 )
 
                 st.rerun()
 
+    st.markdown("---")
 
-        # ----------------------------------------------------
-        # PRIVACY / CONTROL NOTE
-        # ----------------------------------------------------
-
-        st.markdown("---")
-
-        st.caption(
-            """
-            GPS recording only runs while the salesperson has
-            an active route. Ending the route stops GPS recording.
-            """
-        )
+    st.caption(
+        "GPS recording occurs only while an active route is running."
+    )
 
 
 # ============================================================
@@ -1104,258 +734,173 @@ else:
 
     st.header("Owner Dashboard")
 
+    active = all_active_routes()
+    completed = completed_routes()
+
+    all_routes = list(active) + list(completed)
+
+    total_points = sum(
+        len(route_points(r["route_id"]))
+        for r in all_routes
+    )
+
+    c1, c2, c3 = st.columns(3)
+
+    c1.metric(
+        "Active Routes",
+        len(active),
+    )
+
+    c2.metric(
+        "Completed Routes",
+        len(completed),
+    )
+
+    c3.metric(
+        "GPS Points",
+        total_points,
+    )
 
     # --------------------------------------------------------
-    # LIVE DASHBOARD FRAGMENT
+    # MAP
     # --------------------------------------------------------
 
-    @st.fragment(run_every="5s")
-    def owner_live_dashboard():
+    st.subheader("Route Map")
 
-        active_routes = get_active_routes()
+    map_object = make_map(
+        all_routes
+    )
 
-        completed_routes = (
-            get_completed_routes()
+    if map_object:
+
+        st.pydeck_chart(
+            map_object,
+            use_container_width=True,
         )
 
+    else:
 
-        # ----------------------------------------------------
-        # SUMMARY
-        # ----------------------------------------------------
-
-        total_points = 0
-
-        for route in active_routes:
-
-            total_points += len(
-                get_route_points(
-                    route["route_id"]
-                )
-            )
-
-        for route in completed_routes:
-
-            total_points += len(
-                get_route_points(
-                    route["route_id"]
-                )
-            )
-
-
-        col1, col2, col3 = st.columns(3)
-
-
-        col1.metric(
-            "Active Routes",
-            len(active_routes),
+        st.info(
+            "No GPS route points have been recorded yet."
         )
-
-        col2.metric(
-            "Completed Routes",
-            len(completed_routes),
-        )
-
-        col3.metric(
-            "GPS Points",
-            total_points,
-        )
-
-
-        st.write("")
-
-
-        # ----------------------------------------------------
-        # ACTIVE ROUTES
-        # ----------------------------------------------------
-
-        st.subheader(
-            "🟢 Active Movement"
-        )
-
-
-        if active_routes:
-
-            active_data = []
-
-
-            for route in active_routes:
-
-                points = get_route_points(
-                    route["route_id"]
-                )
-
-                latest = (
-                    points[-1]
-                    if points
-                    else None
-                )
-
-
-                active_data.append(
-                    {
-                        "Salesperson":
-                            route["salesperson"],
-
-                        "Started":
-                            route["started_at"],
-
-                        "GPS Points":
-                            len(points),
-
-                        "Latitude":
-                            (
-                                round(
-                                    float(
-                                        latest[
-                                            "latitude"
-                                        ]
-                                    ),
-                                    5,
-                                )
-                                if latest
-                                else None
-                            ),
-
-                        "Longitude":
-                            (
-                                round(
-                                    float(
-                                        latest[
-                                            "longitude"
-                                        ]
-                                    ),
-                                    5,
-                                )
-                                if latest
-                                else None
-                            ),
-                    }
-                )
-
-
-            st.dataframe(
-                pd.DataFrame(
-                    active_data
-                ),
-                use_container_width=True,
-                hide_index=True,
-            )
-
-        else:
-
-            st.info(
-                "No salesperson currently has an active route."
-            )
-
-
-        # ----------------------------------------------------
-        # MAP
-        # ----------------------------------------------------
-
-        st.subheader(
-            "Route Map"
-        )
-
-
-        map_deck = create_route_map(
-            active_routes=active_routes,
-            completed_routes=completed_routes,
-        )
-
-
-        if map_deck:
-
-            st.pydeck_chart(
-                map_deck,
-                use_container_width=True,
-            )
-
-            st.caption(
-                "Blue lines show recorded movement. "
-                "Red points show the latest position of an active route."
-            )
-
-        else:
-
-            st.info(
-                "No GPS route has been recorded yet."
-            )
-
-
-        # ----------------------------------------------------
-        # COMPLETED ROUTES
-        # ----------------------------------------------------
-
-        st.subheader(
-            "Completed Routes"
-        )
-
-
-        if completed_routes:
-
-            completed_data = []
-
-
-            for route in completed_routes:
-
-                points = get_route_points(
-                    route["route_id"]
-                )
-
-
-                completed_data.append(
-                    {
-                        "Salesperson":
-                            route["salesperson"],
-
-                        "Started":
-                            route["started_at"],
-
-                        "Ended":
-                            route["ended_at"],
-
-                        "GPS Points":
-                            len(points),
-
-                        "Route ID":
-                            route["route_id"][
-                                :8
-                            ],
-                    }
-                )
-
-
-            st.dataframe(
-                pd.DataFrame(
-                    completed_data
-                ),
-                use_container_width=True,
-                hide_index=True,
-            )
-
-        else:
-
-            st.info(
-                "No completed routes yet."
-            )
-
-
-    owner_live_dashboard()
-
 
     # --------------------------------------------------------
-    # V1 SCOPE
+    # ACTIVE ROUTES
     # --------------------------------------------------------
+
+    st.subheader("Active Routes")
+
+    if active:
+
+        rows = []
+
+        for route in active:
+
+            points = route_points(
+                route["route_id"]
+            )
+
+            latest = (
+                points[-1]
+                if points
+                else None
+            )
+
+            rows.append(
+                {
+                    "Salesperson":
+                        route["salesperson"],
+
+                    "Started":
+                        route["started_at"],
+
+                    "GPS Points":
+                        len(points),
+
+                    "Latitude":
+                        (
+                            round(
+                                latest["latitude"],
+                                5,
+                            )
+                            if latest
+                            else None
+                        ),
+
+                    "Longitude":
+                        (
+                            round(
+                                latest["longitude"],
+                                5,
+                            )
+                            if latest
+                            else None
+                        ),
+                }
+            )
+
+        st.dataframe(
+            pd.DataFrame(rows),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    else:
+
+        st.info(
+            "No active routes."
+        )
+
+    # --------------------------------------------------------
+    # COMPLETED ROUTES
+    # --------------------------------------------------------
+
+    st.subheader("Completed Routes")
+
+    if completed:
+
+        rows = []
+
+        for route in completed:
+
+            points = route_points(
+                route["route_id"]
+            )
+
+            rows.append(
+                {
+                    "Salesperson":
+                        route["salesperson"],
+
+                    "Started":
+                        route["started_at"],
+
+                    "Ended":
+                        route["ended_at"],
+
+                    "GPS Points":
+                        len(points),
+
+                    "Route ID":
+                        route["route_id"][:8],
+                }
+            )
+
+        st.dataframe(
+            pd.DataFrame(rows),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    else:
+
+        st.info(
+            "No completed routes yet."
+        )
 
     st.markdown("---")
 
     st.caption(
-        """
-        V1 focuses on geography: where the salesperson moved
-        and which areas the business physically travelled through.
-
-        Sales, customers, returns, collections, margins and
-        cost-to-serve will be connected to these routes later.
-        """
+        "V1 focuses on geography: where the salesperson moved "
+        "and which areas the business physically travelled through."
     )
-```
